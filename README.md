@@ -110,3 +110,7 @@ No padding (`--no-pad`):
 - A table row must start and end with `|`.
 - Tables in block quotes (`> | a |`) are not detected.
 - Tables in indented code blocks (four spaces, no fence) are formatted like other tables.
+
+## License
+
+mdtf is available under the MIT License. See [LICENSE](LICENSE).
