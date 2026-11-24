@@ -52,11 +52,27 @@ type tableBlock struct {
 }
 
 // detectTables scans lines and returns the index ranges of every markdown table.
+// Lines inside fenced code blocks are never part of a table: a table there is
+// example text that must stay as it is.
 func detectTables(lines []string) []tableBlock {
 	var blocks []tableBlock
+	var fence string // opening fence of the current code block, or empty
 	i := 0
 
 	for i < len(lines) {
+		if fence != "" {
+			if closesFence(lines[i], fence) {
+				fence = ""
+			}
+			i++
+			continue
+		}
+		if f := openingFence(lines[i]); f != "" {
+			fence = f
+			i++
+			continue
+		}
+
 		if !isTableRow(lines[i]) {
 			i++
 			continue
@@ -141,6 +157,35 @@ func replaceTable(lines []string, tb tableBlock, pad bool) []string {
 	out = append(out, lines[tb.endIdx+1:]...)
 
 	return out
+}
+
+// openingFence returns the fence (a run of at least three backticks or tildes)
+// that opens a fenced code block on line, or an empty string. The fence may be
+// indented, so that code blocks in list items count, too. A backtick fence
+// must not have a backtick in its info string (CommonMark rule).
+func openingFence(line string) string {
+	trimmed := strings.TrimLeft(line, " \t")
+	if trimmed == "" || (trimmed[0] != '`' && trimmed[0] != '~') {
+		return ""
+	}
+
+	n := len(trimmed) - len(strings.TrimLeft(trimmed, trimmed[:1]))
+	if n < 3 {
+		return ""
+	}
+	if trimmed[0] == '`' && strings.Contains(trimmed[n:], "`") {
+		return ""
+	}
+	return trimmed[:n]
+}
+
+// closesFence returns true if line closes a code block that fence opened: a
+// fence of the same character, at least as long as the opening one, with
+// nothing but whitespace after it.
+func closesFence(line, fence string) bool {
+	trimmed := strings.TrimSpace(line)
+	n := len(trimmed) - len(strings.TrimLeft(trimmed, fence[:1]))
+	return n >= len(fence) && n == len(trimmed)
 }
 
 // isTableRow returns true if the line looks like a markdown table row.

@@ -2,7 +2,8 @@ package pkg
 
 import (
 	"strings"
-	"unicode/utf8"
+
+	"github.com/rivo/uniseg"
 )
 
 // Alignment represents the alignment of a table column.
@@ -17,6 +18,9 @@ const (
 
 // Table represents a parsed markdown table with its position in the source file.
 type Table struct {
+	// Indent is the leading whitespace of the header row. Every rendered row
+	// gets it, so that tables in list items stay in their list item.
+	Indent    string
 	Header    []string
 	Alignment []Alignment
 	Rows      [][]string
@@ -36,6 +40,7 @@ func ParseTable(lines []string, startLine int) Table {
 		return t
 	}
 
+	t.Indent = leadingWhitespace(lines[0])
 	t.Header = parseCells(lines[0])
 	t.Alignment = parseAlignments(lines[1])
 
@@ -67,21 +72,23 @@ func (t Table) Render(pad bool) []string {
 	}
 
 	var lines []string
-	lines = append(lines, renderRow(t.Header, widths, pad))
-	lines = append(lines, renderSeparator(t.Alignment, widths, colCount, pad))
+	lines = append(lines, t.Indent+renderRow(t.Header, t.Alignment, widths, pad))
+	lines = append(lines, t.Indent+renderSeparator(t.Alignment, widths, colCount, pad))
 	for _, row := range t.Rows {
-		lines = append(lines, renderRow(row, widths, pad))
+		lines = append(lines, t.Indent+renderRow(row, t.Alignment, widths, pad))
 	}
 
 	return lines
 }
 
 // columnWidths computes the maximum display width per column across all rows.
+// The display width counts the terminal columns of the text, so that wide
+// characters (CJK, most emoji) take two columns and combining marks none.
 func (t Table) columnWidths(colCount int) []int {
 	widths := make([]int, colCount)
 
 	for i, cell := range t.Header {
-		if w := utf8.RuneCountInString(cell); w > widths[i] {
+		if w := uniseg.StringWidth(cell); w > widths[i] {
 			widths[i] = w
 		}
 	}
@@ -96,7 +103,7 @@ func (t Table) columnWidths(colCount int) []int {
 
 	for _, row := range t.Rows {
 		for i, cell := range row {
-			if w := utf8.RuneCountInString(cell); w > widths[i] {
+			if w := uniseg.StringWidth(cell); w > widths[i] {
 				widths[i] = w
 			}
 		}
@@ -167,16 +174,16 @@ func parseAlignments(line string) []Alignment {
 	return alignments
 }
 
-// renderRow formats a single data row.
-func renderRow(cells []string, widths []int, pad bool) string {
+// renderRow formats a single header or data row. When pad is true, each cell
+// is padded to its column width according to the column alignment.
+func renderRow(cells []string, alignments []Alignment, widths []int, pad bool) string {
 	var b strings.Builder
 	b.WriteByte('|')
 
 	for i, cell := range cells {
 		b.WriteByte(' ')
 		if pad && i < len(widths) {
-			padded := padCell(cell, widths[i])
-			b.WriteString(padded)
+			b.WriteString(padCell(cell, alignments[i], widths[i]))
 		} else {
 			b.WriteString(cell)
 		}
@@ -229,13 +236,30 @@ func buildSeparatorCell(a Alignment, width int) string {
 	}
 }
 
-// padCell pads a cell value with trailing spaces to reach the target width.
-func padCell(cell string, width int) string {
-	cellWidth := utf8.RuneCountInString(cell)
-	if cellWidth >= width {
+// padCell pads a cell value with spaces to reach the target display width.
+// Right-aligned cells get the spaces before the value, centered cells on both
+// sides (the extra space of an odd remainder goes to the right), and all other
+// cells after the value.
+func padCell(cell string, a Alignment, width int) string {
+	missing := width - uniseg.StringWidth(cell)
+	if missing <= 0 {
 		return cell
 	}
-	return cell + strings.Repeat(" ", width-cellWidth)
+
+	switch a {
+	case AlignRight:
+		return strings.Repeat(" ", missing) + cell
+	case AlignCenter:
+		left := missing / 2
+		return strings.Repeat(" ", left) + cell + strings.Repeat(" ", missing-left)
+	default:
+		return cell + strings.Repeat(" ", missing)
+	}
+}
+
+// leadingWhitespace returns the spaces and tabs at the start of line.
+func leadingWhitespace(line string) string {
+	return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 }
 
 // separatorMinWidth returns the minimum width for a separator cell given its alignment.
