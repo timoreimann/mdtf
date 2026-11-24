@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/treimann/mdtf/pkg"
+	"github.com/timoreimann/mdtf/pkg"
 
 	flag "github.com/spf13/pflag"
 )

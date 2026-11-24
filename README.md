@@ -5,7 +5,7 @@ A CLI tool that formats markdown tables.
 ## Installation
 
 ```bash
-go install github.com/treimann/mdtf@latest
+go install github.com/timoreimann/mdtf@latest
 ```
 
 ## Usage
